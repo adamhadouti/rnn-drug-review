@@ -28,7 +28,13 @@ import torch
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, Sampler
 
-UCI_URL = "https://archive.ics.uci.edu/static/public/462/drug+review+dataset+drugs+com.zip"
+UCI_URLS = [  # UCI has moved this file before; try current and legacy locations
+    "https://archive.ics.uci.edu/static/public/462/drug+review+dataset+drugs+com.zip",
+    "https://archive.ics.uci.edu/static/public/462/drug+reviews+drugs+com.zip",
+    "https://archive.ics.uci.edu/ml/machine-learning-databases/00462/drugsCom_raw.zip",
+]
+# Exact mirror of the two raw UCI files (same rows, columns and HTML-escaped text)
+HF_MIRROR = "https://huggingface.co/datasets/lewtun/drug-reviews/resolve/main/{split}.jsonl"
 LABELS = ["negative", "neutral", "positive"]
 PAD, UNK = "<pad>", "<unk>"
 TOKEN_RE = re.compile(r"[a-z0-9]+(?:'[a-z]+)?|[!?.,;:()]")
@@ -40,14 +46,25 @@ def download(data_dir: str) -> None:
         return
     os.makedirs(data_dir, exist_ok=True)
     zpath = os.path.join(data_dir, "drug_review.zip")
-    print(f"Downloading {UCI_URL} ...")
-    urllib.request.urlretrieve(UCI_URL, zpath)
-    with zipfile.ZipFile(zpath) as z:
-        z.extractall(data_dir)
-    for inner in glob.glob(os.path.join(data_dir, "**", "*.zip"), recursive=True):
-        if inner != zpath:
-            with zipfile.ZipFile(inner) as z:
-                z.extractall(os.path.dirname(inner))
+    for url in UCI_URLS:
+        try:
+            print(f"Downloading {url} ...")
+            urllib.request.urlretrieve(url, zpath)
+            with zipfile.ZipFile(zpath) as z:
+                z.extractall(data_dir)
+            for inner in glob.glob(os.path.join(data_dir, "**", "*.zip"), recursive=True):
+                if inner != zpath:
+                    with zipfile.ZipFile(inner) as z:
+                        z.extractall(os.path.dirname(inner))
+            if _find(data_dir, "train") and _find(data_dir, "test"):
+                return
+        except Exception as e:  # 404, bad zip, network...
+            print(f"  failed: {e}")
+    print("UCI unavailable, using the Hugging Face mirror of the same raw files ...")
+    for split, name in (("train", "drugsComTrain_raw.tsv"), ("test", "drugsComTest_raw.tsv")):
+        df = pd.read_json(HF_MIRROR.format(split=split), lines=True)
+        df.to_csv(os.path.join(data_dir, name), sep="\t", index=False)
+        print(f"  {name}: {len(df)} rows")
 
 
 def _find(data_dir: str, split: str):
