@@ -1,5 +1,7 @@
 # LSTM Variants for Drug Review Sentiment Classification
 
+**Team:** Aya EL MOUDEN, Adam HADOUTI, Moustapha Abdelkerim KOIBORO, Amine LASSRI, Mohamed Hamza EL ASRI · **Supervised by** Pr. Youness MOUKAFIH, Alaa ZNIBER
+
 Advanced NLP lab project (UIR, 2026/2027). We compare a **vanilla LSTM** baseline with two non-vanilla cells, **Working Memory Connections (WMC)** and the **Coupled Input-Forget Gate (CIFG)** LSTM, plus **LSTMP** (projection) as a bonus. The task is 3-class sentiment classification on the UCI Drugs.com review dataset. Every cell is written from scratch with `nn.Linear`. No `nn.LSTM` or `nn.LSTMCell` is used anywhere in the models.
 
 ## Task and protocol
@@ -29,6 +31,9 @@ src/eda.py          EDA figures + statistics for the report
 src/aggregate.py    results → summary.csv, summary.md (report tables) and figures
 tests/              correctness tests (cells vs. equations), synthetic-data generator
 colab_runner.ipynb  one-click Colab workflow
+results/            one JSON per run + summary.md / summary.csv
+figures/            EDA and result figures
+report/             the project report (PDF)
 ```
 
 ## Mapping from equations to code
@@ -65,9 +70,31 @@ python -m src.aggregate --results_dir <shared folder>
 
 On Colab, open `colab_runner.ipynb`, set your shard index, and run all cells. Results are written to Google Drive, and finished runs are skipped, so a disconnect just resumes. Offline smoke test: `python tests/make_fake_data.py data_fake && python run_experiments.py --data_dir data_fake --epochs 1`.
 
-## Experiment plan
+## Experiments reported
 
-Base config: emb 128, H 128 (LSTMP P 64), 1 layer, Adam lr 1e-3, batch 64, dropout 0.3, PyTorch default init, gradient clipping 1.0, ≤10 epochs with patience 3. Each sweep changes **one** setting from the base. The base point of every sweep is the seed-1 run of group A.
+The report (`report/RNN_Drug_Review_Report.pdf`) is based on **39 runs** on one Colab T4 GPU, with a reduced budget that is identical for every model: a stratified **50 % subsample of the training split** (validation and test complete) and **at most 5 epochs**.
+
+```bash
+python run_experiments.py --groups A_arch B_lr C_optim D_init --train_frac 0.5 --epochs 5   # 36 runs
+python run_experiments.py --groups G_imbalance            --train_frac 0.5 --epochs 5   #  3 runs
+python -m src.aggregate                                                                   # tables + figures
+```
+
+| Result | Test macro-F1 |
+|---|---|
+| Architecture, base config (mean ± sd, 3 seeds) | vanilla 0.530 ± 0.003 · WMC 0.535 ± 0.004 · CIFG **0.539 ± 0.008** · LSTMP 0.531 ± 0.003 |
+| Learning rate 3e-3 (vs 1e-3) | vanilla 0.552 · WMC 0.563 · CIFG 0.569 |
+| Orthogonal init + forget bias 1 | vanilla 0.541 · WMC 0.555 · CIFG 0.561 |
+| Class-weighted loss | vanilla 0.567 · WMC 0.585 · CIFG 0.583 |
+| **Final model** (selected on validation): class-weighted CIFG | **0.583** (accuracy 0.708, neutral F1 0.25) |
+
+Key findings: the cells are close, but across 9 paired settings the vanilla LSTM is always last and CIFG matches or beats it with 25 % fewer recurrent parameters; WMC is slightly better than vanilla but 56 % slower. Training choices matter more than the cell, above all a class-weighted loss that stops the models ignoring the neutral class (8.9 % of reviews).
+
+The run files for every experiment are in `results/` (one JSON per run: config, parameter counts, per-epoch history, test metrics, confusion matrix); `results/summary.md` and `results/summary.csv` aggregate them.
+
+## Full experiment plan
+
+The code also defines the larger plan below (51 runs) for a full-budget study. Base config: emb 128, H 128 (LSTMP P 64), 1 layer, Adam lr 1e-3, batch 64, dropout 0.3, PyTorch default init, gradient clipping 1.0, ≤10 epochs with patience 3. Each sweep changes **one** setting from the base. The base point of every sweep is the seed-1 run of group A.
 
 | Group | What varies | Cells | Runs |
 |---|---|---|---|
